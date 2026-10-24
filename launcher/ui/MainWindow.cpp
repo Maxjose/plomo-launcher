@@ -879,7 +879,8 @@ void MainWindow::updatePlomoUi()
     const auto state = m_plomoUpdater->state();
     const bool running = m_selectedInstance && m_selectedInstance->isRunning();
     const bool offlinePlay = state == State::Failed && m_plomoUpdater->canPlayOffline();
-    const auto version = m_plomoUpdater->version();
+    // The footer shows what is installed, not what the server offers (the update button already says that).
+    const auto version = m_plomoUpdater->isInstalled() ? m_plomoUpdater->installedVersion() : QString();
 
     m_plomoProgress->setVisible(state == State::Installing || state == State::Verifying);
     m_plomoVerify->setEnabled(m_plomoUpdater->isInstalled() && !m_plomoPreparing && !m_plomoLaunching &&

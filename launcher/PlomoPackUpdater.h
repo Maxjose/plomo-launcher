@@ -27,7 +27,10 @@ public:
     // Full check by content (SHA-256 of every file) in a worker thread; wrong or missing files are queued for install().
     void verify();
     State state() const { return m_state; }
+    // Latest version published on the server (from the manifest).
     QString version() const { return m_manifest.value("version").toString(); }
+    // Version actually installed on disk; empty when nothing is installed.
+    QString installedVersion() const;
     bool isInstalled() const;
     // True when the manifest could not be fetched but a previous install can still be played.
     bool canPlayOffline() const { return m_canPlayOffline; }
@@ -51,7 +54,6 @@ private:
     void plan();
     void startVerify();
     void finishVerify(const QVector<FileEntry>& bad);
-    QString installedVersion() const;
     void pump();
     void startDownload(const FileEntry& entry);
     void abortAll();

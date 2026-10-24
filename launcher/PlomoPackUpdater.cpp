@@ -365,7 +365,10 @@ void PlomoPackUpdater::startDownload(const FileEntry& entry)
     }
     m_active.push_back(d);
 
-    const auto url = m_baseUrl.resolved(QUrl(QString::fromUtf8(QUrl::toPercentEncoding(entry.path, "/"))));
+    auto url = m_baseUrl.resolved(QUrl(QString::fromUtf8(QUrl::toPercentEncoding(entry.path, "/"))));
+    // A file can change content while keeping its name (same mod version rebuilt). The hash in the query makes the
+    // CDN cache key change with the content, so a stale cached copy is never served; the server ignores the query.
+    url.setQuery(QStringLiteral("v=") + entry.hash.left(16));
     QNetworkRequest request(url);
     request.setTransferTimeout(30000);  // no data for 30 s: give up on this attempt and retry
     // HTTP/2 multiplexes every download on one connection, and Cloudflare kills that connection ("excessive load")
