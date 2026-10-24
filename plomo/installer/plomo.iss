@@ -28,7 +28,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
-; Politica de privacidad: se muestra antes de instalar (requisito de SignPath Foundation).
+; Politica de privacidad: se muestra antes de instalar.
 InfoBeforeFile=..\..\PRIVACY.md
 DisableWelcomePage=no
 WizardImageFile=assets\side-164x314.bmp,assets\side-246x471.bmp,assets\side-328x628.bmp

@@ -18,19 +18,15 @@ Changes in this fork: PLOMO user interface and pack updater, metadata served fro
 
 Windows x64, Visual Studio 2022 (C++), Qt 6.10.2 (`qtimageformats`, `qtnetworkauth`), JDK 17 and vcpkg. The exact steps are in [`.github/workflows/plomo-windows.yml`](.github/workflows/plomo-windows.yml), which is also what builds the official releases. The installer is an [Inno Setup](https://jrsoftware.org/isinfo.php) script in [`plomo/installer`](plomo/installer).
 
-## Code signing policy
+## Verifying downloads
 
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+The installers are built by GitHub Actions from this repository and are **not code-signed**, so Windows SmartScreen may warn about an unknown publisher the first time (*More info* → *Run anyway*). You can check that a download is the one built from this repository:
 
-- Only binaries built from this repository by the GitHub Actions workflow above are signed (`PLOMO.exe`, `PLOMO_filelink.exe` and the installer). Third-party DLLs (Qt, vcpkg libraries, MSVC runtime) are included as shipped by their authors.
-- Every signing request is approved manually.
-- Team roles:
-  - **Authors** (commit without extra review): [Maxjose](https://github.com/Maxjose)
-  - **Reviewers** (review changes from non-members): [Maxjose](https://github.com/Maxjose)
-  - **Approvers** (approve each signing request): [Maxjose](https://github.com/Maxjose)
-- All team members use multi-factor authentication on GitHub and SignPath.
-- Privacy: see [PRIVACY.md](PRIVACY.md). The launcher has no telemetry.
+- **SHA-256:** compare `Get-FileHash PLOMO-Setup-<version>.exe` with the `SHA256SUMS.txt` attached to the [release](https://github.com/Maxjose/plomo-launcher/releases).
+- **Build provenance:** `gh attestation verify PLOMO-Setup-<version>.exe --repo Maxjose/plomo-launcher` confirms that GitHub Actions built the file from this repository.
+
+Privacy: see [PRIVACY.md](PRIVACY.md). The launcher has no telemetry.
 
 ## Contributing
 
-Open an issue or pull request on this repository. Changes from non-members are reviewed before they are merged and before any release is signed.
+Open an issue or pull request on this repository. Changes from non-members are reviewed before they are merged.
