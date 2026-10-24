@@ -50,14 +50,13 @@
 
 #include "Application.h"
 #include "DesktopServices.h"
-#include "ui/dialogs/ElyLoginDialog.h"
 
 AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new Ui::AccountListPage)
 {
     ui->setupUi(this);
     ui->listView->setEmptyString(
         tr("Welcome!\n"
-           "If you're new here, you can select the \"Add Ely.by\" button to link your Ely.by account."));
+           "If you're new here, you can select the \"Add Microsoft\" button to link your Microsoft account."));
     ui->listView->setEmptyMode(VersionListView::String);
     ui->listView->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -132,17 +131,6 @@ void AccountListPage::listChanged()
 void AccountListPage::on_actionAddMicrosoft_triggered()
 {
     auto account = MSALoginDialog::newAccount(this);
-    if (account) {
-        m_accounts->addAccount(account);
-        if (m_accounts->count() == 1) {
-            m_accounts->setDefaultAccount(account);
-        }
-    }
-}
-
-void AccountListPage::on_actionAddEly_triggered()
-{
-    auto account = ElyLoginDialog::newAccount(this);
     if (account) {
         m_accounts->addAccount(account);
         if (m_accounts->count() == 1) {

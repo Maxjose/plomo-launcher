@@ -291,14 +291,12 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
         type = AccountType::MSA;
     } else if (typeS == "Offline") {
         type = AccountType::Offline;
-    } else if (typeS == "Ely") {
-        type = AccountType::Ely;
     } else {
         qWarning() << "Failed to parse account data: type is not recognized.";
         return false;
     }
 
-    if (type == AccountType::MSA || type == AccountType::Ely) {
+    if (type == AccountType::MSA) {
         auto clientIDV = data.value("msa-client-id");
         if (clientIDV.isString()) {
             msaClientID = clientIDV.toString();
@@ -329,12 +327,8 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
 QJsonObject AccountData::saveState() const
 {
     QJsonObject output;
-    if (type == AccountType::MSA || type == AccountType::Ely) {
-        if (type == AccountType::MSA) {
-            output["type"] = "MSA";
-        } else {
-            output["type"] = "Ely";
-        }
+    if (type == AccountType::MSA) {
+        output["type"] = "MSA";
         output["msa-client-id"] = msaClientID;
         tokenToJSONV3(output, msaToken, "msa");
         tokenToJSONV3(output, userToken, "utoken");

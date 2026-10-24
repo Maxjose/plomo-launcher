@@ -126,9 +126,6 @@ class MinecraftAccount : public QObject, public Usable {
             case AccountType::MSA: {
                 return "msa";
             } break;
-            case AccountType::Ely: {
-                return "msa"; // required for chat signing
-            } break;
             case AccountType::Offline: {
                 return "offline";
             } break;
@@ -143,9 +140,6 @@ class MinecraftAccount : public QObject, public Usable {
         switch (data.type) {
             case AccountType::MSA: {
                 return QString("%1 [MSA]").arg(profileName());
-            } break;
-            case AccountType::Ely: {
-                return QString("%1 [Ely]").arg(profileName());
             } break;
             case AccountType::Offline: {
                 return QString("%1 [Offline]").arg(profileName());
@@ -165,7 +159,7 @@ class MinecraftAccount : public QObject, public Usable {
 
     bool shouldRefresh() const;
 
-    void fillSession(AuthSessionPtr session, int elyPatchPreference);
+    void fillSession(AuthSessionPtr session);
 
     QString lastError() const { return data.lastError(); }
 

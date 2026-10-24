@@ -220,7 +220,7 @@ bool LaunchController::askPlayDemo() const
     QMessageBox box(m_parentWidget);
     box.setWindowTitle(tr("Play demo?"));
     QString text = m_accountToUse
-                       ? tr("This account does not own Minecraft.\nIf you do not own the game, you must use an Ely.by or Offline account")
+                       ? tr("This account does not own Minecraft.\nIf you do not own the game, you must use an Offline account")
                        : tr("No account was selected for launch.");
     text += tr("\n\nDo you want to play the demo?");
     box.setText(text);
@@ -313,7 +313,7 @@ void LaunchController::login()
 
     m_session = std::make_shared<AuthSession>();
     m_session->launchMode = m_actualLaunchMode;
-    m_accountToUse->fillSession(m_session, m_instance->settings()->get("ElyPatchPreference").toInt());
+    m_accountToUse->fillSession(m_session);
 
     if (m_accountToUse->accountType() != AccountType::Offline) {
         if (m_actualLaunchMode == LaunchMode::Normal && !m_accountToUse->hasProfile()) {
@@ -405,12 +405,7 @@ void LaunchController::launchInstance()
         online_mode = "online";
 
         // Prepend Server Status
-        QStringList servers;
-        if (m_session->wantsElyPatch) {
-            servers = { "ely.by", "account.ely.by", "skinsystem.ely.by" };
-        } else {
-            servers = { "login.microsoftonline.com", "session.minecraft.net", "textures.minecraft.net", "api.mojang.com" };
-        }
+        QStringList servers = { "login.microsoftonline.com", "session.minecraft.net", "textures.minecraft.net", "api.mojang.com" };
 
         const auto s = APPLICATION->settings();
         const QString metaOverride = s->get("MetaURLOverride").toString();
@@ -435,6 +430,9 @@ void LaunchController::launchInstance()
 
 void LaunchController::readyForLaunch()
 {
+    // Every preparation step is done; from here the game itself starts. Tell the main window to leave its "starting" state.
+    emit APPLICATION->launchActiveChanged(false);
+    emit APPLICATION->gameLaunching();
     if (!m_profiler) {
         m_launcher->proceed();
         return;
@@ -490,10 +488,9 @@ void LaunchController::onFailed(QString reason)
 
 void LaunchController::onProgressRequested(Task* task) const
 {
-    ProgressDialog progDialog(m_parentWidget);
-    progDialog.setSkipButton(true, tr("Abort"));
+    // The main window listens and renders the progress inline; it must connect before the step starts.
+    emit APPLICATION->launchProgressRequested(task);
     m_launcher->proceed();
-    progDialog.execWithTask(task);
 }
 
 bool LaunchController::abort()

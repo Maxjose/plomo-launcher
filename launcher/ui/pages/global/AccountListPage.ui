@@ -53,7 +53,6 @@
     <bool>false</bool>
    </attribute>
    <addaction name="actionAddMicrosoft"/>
-   <addaction name="actionAddEly"/>
    <addaction name="actionAddOffline"/>
    <addaction name="actionRefresh"/>
    <addaction name="actionRemove"/>
@@ -88,11 +87,6 @@
   <action name="actionAddMicrosoft">
    <property name="text">
     <string>&amp;Add Microsoft</string>
-   </property>
-  </action>
-  <action name="actionAddEly">
-   <property name="text">
-    <string>&amp;Add Ely.by</string>
    </property>
   </action>
   <action name="actionAddOffline">

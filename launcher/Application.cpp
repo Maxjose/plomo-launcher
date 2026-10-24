@@ -57,7 +57,6 @@
 #include "ui/instanceview/AccessibleInstanceView.h"
 
 #include "ui/pages/BasePageProvider.h"
-#include "ui/pages/global/APIPage.h"
 #include "ui/pages/global/AccountListPage.h"
 #include "ui/pages/global/AppearancePage.h"
 #include "ui/pages/global/ExternalToolsPage.h"
@@ -124,7 +123,6 @@
 #include <DesktopServices.h>
 #include <FileSystem.h>
 #include <LocalPeer.h>
-#include <PineconeNetworkCheck.h>
 
 #include <stdlib.h>
 #include "SysInfo.h"
@@ -765,9 +763,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // Legacy settings
         m_settings->registerSetting("OnlineFixes", true);
 
-        // Ely settings
-        m_settings->registerSetting("ElyPatchPreference", 1);
-
         // Native library workarounds
         m_settings->registerSetting("UseNativeOpenAL", false);
         m_settings->registerSetting("CustomOpenALPath", "");
@@ -879,12 +874,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
             // Resource URL
             resetIfInvalid(m_settings->registerSetting({ "ResourceURLOverride", "ResourceURL" }, "").get());
-
-            // Legacy FML libs URL
-            resetIfInvalid(m_settings->registerSetting("LegacyFMLLibsURLOverride", "").get());
         }
-
-        m_settings->registerSetting("PineconeAutoServers", true);
 
         m_settings->registerSetting("MetaRefreshOnLaunch", true);
         m_settings->registerSetting("CloseAfterLaunch", false);
@@ -894,29 +884,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         // Custom Microsoft Authentication Client ID
         m_settings->registerSetting("MSAClientIDOverride", "");
-        // Custom Ely.by Accounts OAuth ID
-        m_settings->registerSetting("ElyClientIDOverride", "");
 
-        // Custom Flame API Key
-        {
-            m_settings->registerSetting("CFKeyOverride", "");
-            m_settings->registerSetting("FlameKeyOverride", "");
-
-            QString flameKey = m_settings->get("CFKeyOverride").toString();
-
-            if (!flameKey.isEmpty())
-                m_settings->set("FlameKeyOverride", flameKey);
-            m_settings->reset("CFKeyOverride");
-        }
-        m_settings->registerSetting("FallbackMRBlockedMods", true);
-        m_settings->registerSetting("ModrinthToken", "");
         m_settings->registerSetting("UserAgentOverride", "");
-
-        // FTBApp instances
-        m_settings->registerSetting("FTBAppInstancesPath", "");
-
-        // Custom Technic Client ID
-        m_settings->registerSetting("TechnicClientID", "");
 
         // Init page provider
         {
@@ -927,7 +896,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             m_globalSettingsProvider->addPage<MinecraftPage>();
             m_globalSettingsProvider->addPage<JavaPage>();
             m_globalSettingsProvider->addPage<AccountListPage>();
-            m_globalSettingsProvider->addPage<APIPage>();
             m_globalSettingsProvider->addPage<ExternalToolsPage>();
             m_globalSettingsProvider->addPage<ProxyPage>();
         }
@@ -1016,13 +984,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_metacache->addBase("libraries", QDir("libraries").absolutePath());
         m_metacache->addBase("fmllibs", QDir("mods/minecraftforge/libs").absolutePath());
         m_metacache->addBase("general", QDir("cache").absolutePath());
-        m_metacache->addBase("ATLauncherPacks", QDir("cache/ATLauncherPacks").absolutePath());
-        m_metacache->addBase("FTBPacks", QDir("cache/FTBPacks").absolutePath());
-        m_metacache->addBase("TechnicPacks", QDir("cache/TechnicPacks").absolutePath());
-        m_metacache->addBase("FlamePacks", QDir("cache/FlamePacks").absolutePath());
-        m_metacache->addBase("FlameMods", QDir("cache/FlameMods").absolutePath());
-        m_metacache->addBase("ModrinthPacks", QDir("cache/ModrinthPacks").absolutePath());
-        m_metacache->addBase("ModrinthModpacks", QDir("cache/ModrinthModpacks").absolutePath());
         m_metacache->addBase("translations", QDir("translations").absolutePath());
         m_metacache->addBase("meta", QDir("meta").absolutePath());
         m_metacache->addBase("java", QDir("cache/java").absolutePath());
@@ -1034,13 +995,10 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     // load translations
     {
         m_translations.reset(new TranslationsModel("translations"));
-        m_translations->downloadIndex();
+        // Only the bundled Spanish and English are offered, so the translation index is not downloaded.
         qInfo() << "Your language is" << m_translations->selectedLanguage();
         qInfo() << "<> Translations loaded.";
     }
-
-    m_pineconeNetworkCheck = std::make_unique<PineconeNetworkCheck>(m_network.get());
-    connect(m_pineconeNetworkCheck.get(), &PineconeNetworkCheck::shouldReloadNews, this, &Application::shouldReloadNews);
 
     // FIXME: what to do with these?
     m_profilers.insert("jprofiler", std::shared_ptr<BaseProfilerFactory>(new JProfilerFactory()));
@@ -1213,9 +1171,16 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         installEventFilter(new ToolTipFilter);
     }
 
-    if (createSetupWizard()) {
-        return;
-    }
+    // PLOMO presents account, language, and Java controls in its own window.
+    // The generic first-run wizard would show the original launcher interface.
+    if (settings()->get("Language").toString().isEmpty())
+        settings()->set("Language", "es");
+    if (!m_themeManager->isValidApplicationTheme(settings()->get("ApplicationTheme").toString()))
+        settings()->set("ApplicationTheme", "bright");
+    if (!m_themeManager->isValidIconTheme(settings()->get("IconTheme").toString()))
+        settings()->set("IconTheme", "pe_colored");
+    settings()->set("AutomaticJavaDownload", true);
+    settings()->set("AutomaticJavaSwitch", true);
 
     m_themeManager->applyCurrentlySelectedTheme(true);
     performMainStartupAction();
@@ -1566,6 +1531,7 @@ bool Application::launch(BaseInstance* instance,
         }
         connect(controller.get(), &LaunchController::finished, this, &Application::controllerFinished);
         addRunningInstance();
+        emit launchActiveChanged(true);
         QMetaObject::invokeMethod(controller.get(), &Task::start, Qt::QueuedConnection);
         return true;
     } else if (instance->isRunning()) {
@@ -1655,6 +1621,7 @@ void Application::controllerFinished()
     }
     extras.controller.reset();
     subRunningInstance();
+    emit launchActiveChanged(false);
 
     // quit when there are no more windows.
     if (shouldExitNow()) {
@@ -1685,7 +1652,6 @@ MainWindow* Application::showMainWindow(bool minimized)
         m_mainWindow->activateWindow();
     } else {
         m_mainWindow = new MainWindow();
-        m_mainWindow->restoreState(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowState").toString().toUtf8()));
         m_mainWindow->restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowGeometry").toString().toUtf8()));
 
         if (minimized) {
@@ -1851,8 +1817,6 @@ void Application::updateCapabilities()
     m_capabilities = None;
     if (!getMSAClientID().isEmpty())
         m_capabilities |= SupportsMSA;
-    if (!getFlameAPIKey().isEmpty())
-        m_capabilities |= SupportsFlame;
 
 #ifdef Q_OS_LINUX
     if (gamemode_query_status() >= 0)
@@ -1897,35 +1861,6 @@ QString Application::getMSAClientID()
     }
 
     return BuildConfig.MSA_CLIENT_ID;
-}
-
-QString Application::getElyClientID()
-{
-    QString clientIDOverride = m_settings->get("ElyClientIDOverride").toString();
-    if (!clientIDOverride.isEmpty()) {
-        return clientIDOverride;
-    }
-
-    return BuildConfig.ELY_CLIENT_ID;
-}
-
-QString Application::getFlameAPIKey()
-{
-    QString keyOverride = m_settings->get("FlameKeyOverride").toString();
-    if (!keyOverride.isEmpty()) {
-        return keyOverride;
-    }
-
-    return BuildConfig.FLAME_API_KEY;
-}
-
-QString Application::getModrinthAPIToken()
-{
-    QString tokenOverride = m_settings->get("ModrinthToken").toString();
-    if (!tokenOverride.isEmpty())
-        return tokenOverride;
-
-    return QString();
 }
 
 QString Application::getUserAgent()

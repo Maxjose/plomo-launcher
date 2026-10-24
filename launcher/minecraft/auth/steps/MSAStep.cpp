@@ -100,6 +100,9 @@ class LoggingOAuthHttpServerReplyHandler final : public QOAuthHttpServerReplyHan
    public:
     explicit LoggingOAuthHttpServerReplyHandler(QObject* parent = nullptr) : QOAuthHttpServerReplyHandler(parent) {}
 
+    // Qt advertises http://127.0.0.1:<port>/, but the Azure registration only accepts the http://localhost loopback form.
+    QString callback() const override { return QOAuthHttpServerReplyHandler::callback().replace("127.0.0.1", "localhost"); }
+
    protected:
     void networkReplyFinished(QNetworkReply* reply) override
     {

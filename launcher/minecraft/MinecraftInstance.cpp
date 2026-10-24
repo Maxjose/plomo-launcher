@@ -70,9 +70,7 @@
 #include "minecraft/launch/VerifyJavaInstall.h"
 
 #include "minecraft/update/AssetUpdateTask.h"
-#include "minecraft/update/ElyPatchTask.h"
 #include "minecraft/update/FoldersTask.h"
-#include "minecraft/update/LegacyFMLLibrariesTask.h"
 #include "minecraft/update/LibrariesTask.h"
 
 #include "java/JavaUtils.h"
@@ -240,9 +238,6 @@ void MinecraftInstance::loadSpecificSettings()
         auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);
         m_settings->registerOverride(global_settings->getSetting("OnlineFixes"), legacySettings);
 
-        // Ely-related options
-        auto elySettings = m_settings->registerSetting("OverrideElySettings", false);
-        m_settings->registerOverride(global_settings->getSetting("ElyPatchPreference"), elySettings);
 
         auto envSetting = m_settings->registerSetting("OverrideEnv", false);
         m_settings->registerOverride(global_settings->getSetting("Env"), envSetting);
@@ -1129,8 +1124,6 @@ QList<LaunchStep::Ptr> MinecraftInstance::createUpdateTask()
         makeShared<FoldersTask>(this),
         // libraries download
         makeShared<LibrariesTask>(this),
-        // FML libraries download and copy into the instance
-        makeShared<LegacyFMLLibrariesTask>(this),
         // assets update
         makeShared<AssetUpdateTask>(this),
     };
@@ -1195,10 +1188,6 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         process->appendStep(step);
     }
 
-    // prepare Ely patch
-    if (session->wantsElyPatch) {
-        process->appendStep(makeShared<TaskStepWrapper>(pptr, makeShared<ElyPatchTask>(this, runtimeContext(), mode)));
-    }
 
     // if we aren't in offline mode
     if (session->launchMode != LaunchMode::Offline) {

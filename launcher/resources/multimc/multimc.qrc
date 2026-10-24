@@ -9,13 +9,6 @@
         <!-- launcher settings page -->
         <file>scalable/launcher.svg</file>
 
-        <!-- technic logo icon -->
-        <file>scalable/technic.svg</file>
-
-        <!-- ATLauncher logo icon (and related bits) -->
-        <file>scalable/atlauncher.svg</file>
-        <file>scalable/atlauncher-placeholder.png</file>
-
         <!-- Modrinth logo icon -->
         <file>scalable/instances/modrinth.svg</file>
 

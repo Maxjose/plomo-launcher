@@ -43,17 +43,25 @@
 #include <memory>
 
 #include <QMainWindow>
+#include <QList>
+#include <QPointer>
 #include <QProcess>
 #include <QTimer>
 
 #include "BaseInstance.h"
 #include "minecraft/auth/MinecraftAccount.h"
+#include "tasks/Task.h"
 
 class LaunchController;
 class NewsChecker;
 class QToolButton;
 class InstanceProxyModel;
 class LabeledToolButton;
+class PlomoPackUpdater;
+class QPushButton;
+class Task;
+class LaunchTask;
+class QProgressBar;
 class QLabel;
 class MinecraftLauncher;
 class BaseProfilerFactory;
@@ -160,8 +168,6 @@ class MainWindow : public QMainWindow {
 
     inline void on_actionExportInstance_triggered() { on_actionExportInstanceZip_triggered(); }
     void on_actionExportInstanceZip_triggered();
-    void on_actionExportInstanceMrPack_triggered();
-    void on_actionExportInstanceFlamePack_triggered();
 
     void on_actionRenameInstance_triggered();
 
@@ -228,6 +234,14 @@ class MainWindow : public QMainWindow {
     void setSelectedInstanceById(const QString& id);
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
+    void setupPlomoUi();
+    void updatePlomoUi();
+    void updatePlomoAccount();
+    void showLaunchProgress(Task* task);
+    void startMinecraftPrepare();
+    void checkLauncherUpdate();
+    void runNextPrepStep();
+    void finishPrepare(const QString& error);
 
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
@@ -250,6 +264,27 @@ class MainWindow : public QMainWindow {
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 
     BaseInstance* m_selectedInstance = nullptr;
+    PlomoPackUpdater* m_plomoUpdater = nullptr;
+    QPushButton* m_plomoAction = nullptr;
+    QProgressBar* m_plomoProgress = nullptr;
+    QLabel* m_plomoStatus = nullptr;
+    QLabel* m_plomoFooter = nullptr;
+    QPushButton* m_plomoAccounts = nullptr;
+    QPushButton* m_plomoCheck = nullptr;
+    QPushButton* m_plomoFolder = nullptr;
+    QPushButton* m_plomoCancel = nullptr;
+    QAction* m_plomoVerify = nullptr;
+    QPushButton* m_plomoUpdateNotice = nullptr;
+    QString m_plomoDownloadUrl;
+    QPointer<Task> m_plomoLaunchTask;
+    bool m_plomoLaunching = false;
+    // Minecraft/Java/libraries/assets are fetched right after the pack so that the first Play has nothing left to download.
+    bool m_plomoPreparing = false;
+    QList<Task::Ptr> m_plomoPrepSteps;
+    std::shared_ptr<LaunchTask> m_plomoPrepLaunch;
+    int m_plomoPrepIndex = 0;
+    QPointer<Task> m_plomoPrepCurrent;
+    QString m_plomoRoot;
     QString m_currentInstIcon;
 
     // managed by the application object

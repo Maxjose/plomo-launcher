@@ -51,11 +51,11 @@
 
 #include "minecraft/auth/MinecraftAccount.h"
 
-class PineconeNetworkCheck;
 class LaunchController;
 class LocalPeer;
 class InstanceWindow;
 class MainWindow;
+class Task;
 class ViewLogWindow;
 class SetupWizard;
 class GenericPageProvider;
@@ -106,7 +106,6 @@ class Application : public QApplication {
         None = 0,
 
         SupportsMSA = 1 << 0,
-        SupportsFlame = 1 << 1,
         SupportsGameMode = 1 << 2,
         SupportsMangoHud = 1 << 3,
     };
@@ -165,9 +164,6 @@ class Application : public QApplication {
     QString getJarPath(QString jarFile);
 
     QString getMSAClientID();
-    QString getElyClientID();
-    QString getFlameAPIKey();
-    QString getModrinthAPIToken();
     QString getUserAgent();
 
     /// this is the root of the 'installation'. Used for automatic updates
@@ -210,6 +206,11 @@ class Application : public QApplication {
     int currentCatChanged(int index);
 
     void oauthReplyRecieved(QVariantMap);
+
+    // PLOMO shows launch progress inside its main window instead of a modal dialog.
+    void launchActiveChanged(bool active);
+    void launchProgressRequested(Task* task);
+    void gameLaunching();  // preparation is done and the game process is about to start
 
     void shouldReloadNews(QString newUrl);
 
@@ -306,7 +307,6 @@ class Application : public QApplication {
 
     SetupWizard* m_setupWizard = nullptr;
 
-    std::unique_ptr<PineconeNetworkCheck> m_pineconeNetworkCheck;
 
    public:
     QString m_detectedGLFWPath;

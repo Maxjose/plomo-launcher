@@ -47,29 +47,9 @@ NewsChecker::NewsChecker(QNetworkAccessManager* network, const QString& feedUrl)
     m_feedUrl = feedUrl;
 }
 
-void NewsChecker::reloadNews(const QString& newUrl)
+// PLOMO has no news feed: this deliberately does nothing, so no third-party server is contacted.
+void NewsChecker::reloadNews(const QString&)
 {
-    if (!newUrl.isEmpty()) {
-        m_feedUrl = newUrl;
-    }
-
-    // Start a netjob to download the RSS feed and call rssDownloadFinished() when it's done.
-    if (isLoadingNews()) {
-        qDebug() << "Ignored request to reload news. Currently reloading already.";
-        return;
-    }
-
-    m_entry = APPLICATION->metacache()->resolveEntry("feed", "feed.xml");
-
-    qDebug() << "Reloading news.";
-
-    NetJob::Ptr job{ new NetJob("News RSS Feed", m_network) };
-    job->addNetAction(Net::Download::makeCached(m_feedUrl, m_entry));
-    job->setAskRetry(false);
-    connect(job.get(), &NetJob::succeeded, this, &NewsChecker::rssDownloadFinished);
-    connect(job.get(), &NetJob::failed, this, &NewsChecker::rssDownloadFailed);
-    m_newsNetJob.reset(job);
-    job->start();
 }
 
 void NewsChecker::rssDownloadFinished()

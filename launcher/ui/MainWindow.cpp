@@ -43,6 +43,13 @@
 #include "FileSystem.h"
 
 #include "MainWindow.h"
+#include "PlomoPackUpdater.h"
+#include "ui/PlomoPages.h"
+#include "launch/LaunchTask.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/MinecraftLoadAndCheck.h"
+#include "minecraft/launch/AutoInstallJava.h"
+#include "net/Mode.h"
 #include "ui_MainWindow.h"
 
 #include <QDir>
@@ -61,12 +68,25 @@
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <QMainWindow>
 #include <QMenu>
+#include <QGuiApplication>
+#include <QLinearGradient>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
 #include <QProgressDialog>
 #include <QShortcut>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QStackedWidget>
+#include <QVersionNumber>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
@@ -99,7 +119,6 @@
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
-#include "ui/dialogs/ExportPackDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
 #include "ui/dialogs/ImportResourceDialog.h"
 #include "ui/dialogs/NewInstanceDialog.h"
@@ -123,8 +142,6 @@
 #include "minecraft/mod/tasks/LocalResourceParse.h"
 
 #include "modplatform/ModIndex.h"
-#include "modplatform/flame/FlameAPI.h"
-#include "modplatform/flame/FlameModIndex.h"
 
 #include "KonamiCode.h"
 
@@ -209,8 +226,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         auto exportInstanceMenu = new QMenu(this);
         exportInstanceMenu->addAction(ui->actionExportInstanceZip);
-        exportInstanceMenu->addAction(ui->actionExportInstanceMrPack);
-        exportInstanceMenu->addAction(ui->actionExportInstanceFlamePack);
         ui->actionExportInstance->setMenu(exportInstanceMenu);
     }
 
@@ -431,6 +446,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     setSelectedInstanceById(APPLICATION->settings()->get("SelectedInstance").toString());
 
+    setupPlomoUi();
+
     // removing this looks stupid
     view->setFocus();
 
@@ -481,6 +498,456 @@ void MainWindow::retranslateUi()
 }
 
 MainWindow::~MainWindow() {}
+
+namespace {
+constexpr auto kLauncherInfoUrl = "https://cdn.playplomo.com/launcher/launcher.json";
+constexpr auto kDownloadPageFallback = "https://playplomo.com/launcher/";
+}  // namespace
+
+void MainWindow::setupPlomoUi()
+{
+    plomoInstallLanguage(APPLICATION->settings()->get("Language").toString());
+    auto instanceDir = APPLICATION->settings()->get("InstanceDir").toString();
+    if (QDir(instanceDir).isRelative())
+        instanceDir = QDir(APPLICATION->dataRoot()).filePath(instanceDir);
+    m_plomoRoot = QDir(instanceDir).filePath("PLOMO");
+    m_plomoUpdater = new PlomoPackUpdater(m_plomoRoot, this);
+
+    setWindowIcon(QIcon(":/plomo/icon.png"));
+    QGuiApplication::setApplicationDisplayName(QString());
+    setWindowTitle("PLOMO");
+
+    auto* panel = new PlomoBackdrop(ui->centralWidget, PlomoBackdrop::Mode::Home);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(40, 28, 40, 28);
+    layout->setSpacing(0);
+
+    // Top bar: emblem on the left, account and settings on the right.
+    auto* top = new QHBoxLayout();
+    top->setSpacing(10);
+    auto* emblem = new QLabel(panel);
+    emblem->setPixmap(QPixmap(":/plomo/icon.png").scaled(44, 44, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    top->addWidget(emblem);
+    top->addStretch();
+    m_plomoAccounts = new QPushButton(panel);
+    m_plomoAccounts->setIconSize(QSize(20, 20));
+    m_plomoAccounts->setCursor(Qt::PointingHandCursor);
+    auto* settings = new QPushButton(tr("Configuración"), panel);
+    settings->setCursor(Qt::PointingHandCursor);
+    top->addWidget(m_plomoAccounts);
+    top->addWidget(settings);
+    layout->addLayout(top);
+
+    auto* settingsMenu = new QMenu(settings);
+    auto* languageAction = settingsMenu->addAction(tr("Idioma"));
+    auto* memoryAction = settingsMenu->addAction(tr("Memoria"));
+    m_plomoVerify = settingsMenu->addAction(tr("Verificar archivos"));
+    settingsMenu->addSeparator();
+    settingsMenu->addAction(tr("Abrir carpeta del launcher"), this, &MainWindow::on_actionViewLauncherRootFolder_triggered);
+    settings->setMenu(settingsMenu);
+
+    layout->addStretch(1);
+
+    // Left column: logo, status, progress and the main action.
+    auto* column = new QWidget(panel);
+    column->setFixedWidth(400);
+    column->setAttribute(Qt::WA_TranslucentBackground);
+    auto* col = new QVBoxLayout(column);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(10);
+
+    auto* logo = new QLabel(column);
+    const qreal dpr = devicePixelRatioF();
+    QPixmap logoPixmap = QPixmap(":/plomo/logo.png").scaledToWidth(qRound(380 * dpr), Qt::SmoothTransformation);
+    logoPixmap.setDevicePixelRatio(dpr);
+    logo->setPixmap(logoPixmap);
+    col->addWidget(logo);
+    col->addSpacing(18);
+
+    m_plomoStatus = new QLabel(tr("Buscando actualizaciones..."), column);
+    m_plomoStatus->setObjectName("plomoStatus");
+    m_plomoStatus->setWordWrap(true);
+    col->addWidget(m_plomoStatus);
+
+    m_plomoProgress = new QProgressBar(column);
+    m_plomoProgress->setRange(0, 100);
+    m_plomoProgress->setValue(0);
+    m_plomoProgress->hide();
+    col->addWidget(m_plomoProgress);
+
+    m_plomoAction = new QPushButton(tr("COMPROBANDO..."), column);
+    m_plomoAction->setObjectName("plomoPlay");
+    m_plomoAction->setCursor(Qt::PointingHandCursor);
+    m_plomoAction->setEnabled(false);
+    col->addWidget(m_plomoAction);
+
+    auto* links = new QHBoxLayout();
+    links->setSpacing(18);
+    m_plomoCheck = new QPushButton(tr("Buscar actualizaciones"), column);
+    m_plomoCheck->setObjectName("plomoLink");
+    m_plomoCheck->setCursor(Qt::PointingHandCursor);
+    m_plomoFolder = new QPushButton(tr("Abrir carpeta del juego"), column);
+    m_plomoFolder->setObjectName("plomoLink");
+    m_plomoFolder->setCursor(Qt::PointingHandCursor);
+    m_plomoCancel = new QPushButton(tr("Cancelar"), column);
+    m_plomoCancel->setObjectName("plomoLink");
+    m_plomoCancel->setCursor(Qt::PointingHandCursor);
+    m_plomoCancel->hide();
+    links->addWidget(m_plomoCheck);
+    links->addWidget(m_plomoFolder);
+    links->addWidget(m_plomoCancel);
+    links->addStretch();
+    col->addLayout(links);
+
+    m_plomoFooter = new QLabel(column);
+    m_plomoFooter->setObjectName("plomoFooter");
+    col->addSpacing(6);
+    col->addWidget(m_plomoFooter);
+    // Bottom row: the controls on the left, the "new launcher version" notice on the right.
+    m_plomoUpdateNotice = new QPushButton(panel);
+    m_plomoUpdateNotice->setObjectName("plomoNotice");
+    m_plomoUpdateNotice->setCursor(Qt::PointingHandCursor);
+    m_plomoUpdateNotice->hide();
+    auto* bottom = new QHBoxLayout();
+    bottom->addWidget(column, 0, Qt::AlignBottom);
+    bottom->addStretch();
+    bottom->addWidget(m_plomoUpdateNotice, 0, Qt::AlignBottom | Qt::AlignRight);
+    layout->addLayout(bottom);
+    connect(m_plomoUpdateNotice, &QPushButton::clicked, this, [this] { DesktopServices::openUrl(QUrl(m_plomoDownloadUrl)); });
+
+    connect(m_plomoAction, &QPushButton::clicked, this, [this] {
+        using State = PlomoPackUpdater::State;
+        const auto state = m_plomoUpdater->state();
+        if (state == State::Ready || (state == State::Failed && m_plomoUpdater->canPlayOffline())) {
+            setSelectedInstanceById("PLOMO");
+            if (m_selectedInstance && !m_selectedInstance->isRunning() && !m_plomoLaunching)
+                APPLICATION->launch(m_selectedInstance);
+            else if (!m_selectedInstance)
+                m_plomoStatus->setText(tr("No se encontró la instancia PLOMO. Prueba a buscar actualizaciones."));
+        } else if (state == State::Failed) {
+            m_plomoUpdater->check();
+        } else {
+            m_plomoUpdater->install();
+        }
+    });
+    connect(m_plomoCheck, &QPushButton::clicked, m_plomoUpdater, &PlomoPackUpdater::check);
+    connect(m_plomoCancel, &QPushButton::clicked, this, [this] {
+        if (m_plomoPreparing) {
+            if (m_plomoPrepCurrent && m_plomoPrepCurrent->canAbort())
+                m_plomoPrepCurrent->abort();
+            return;
+        }
+        if (m_plomoLaunchTask && m_plomoLaunchTask->canAbort())
+            m_plomoLaunchTask->abort();
+    });
+    connect(APPLICATION, &Application::launchActiveChanged, this, [this](bool active) {
+        m_plomoLaunching = active;
+        if (!active)
+            m_plomoLaunchTask = nullptr;
+        updatePlomoUi();
+    });
+    connect(APPLICATION, &Application::launchProgressRequested, this, &MainWindow::showLaunchProgress);
+    connect(APPLICATION, &Application::gameLaunching, this, &QWidget::showMinimized);
+    connect(m_plomoFolder, &QPushButton::clicked, this, [this] { DesktopServices::openPath(QFileInfo(m_plomoRoot)); });
+
+    ui->horizontalLayout->setContentsMargins(0, 0, 0, 0);
+    // Home plus PLOMO's own screens; the stock settings dialog is never shown.
+    auto* stack = new QStackedWidget(ui->centralWidget);
+    stack->setStyleSheet(plomoStyleSheet());
+    stack->addWidget(panel);
+    auto* accountsPage = new PlomoAccountsPage(stack);
+    auto* languagePage = new PlomoLanguagePage(stack);
+    auto* memoryPage = new PlomoMemoryPage(stack);
+    for (PlomoPage* page : {static_cast<PlomoPage*>(accountsPage), static_cast<PlomoPage*>(languagePage),
+                            static_cast<PlomoPage*>(memoryPage)}) {
+        stack->addWidget(page);
+        connect(page, &PlomoPage::backRequested, stack, [stack, panel] { stack->setCurrentWidget(panel); });
+    }
+    auto showPage = [stack](PlomoPage* page) {
+        page->refresh();
+        stack->setCurrentWidget(page);
+    };
+    connect(m_plomoAccounts, &QPushButton::clicked, this, [=] { showPage(accountsPage); });
+    connect(languageAction, &QAction::triggered, this, [=] { showPage(languagePage); });
+    connect(memoryAction, &QAction::triggered, this, [=] { showPage(memoryPage); });
+    ui->horizontalLayout->addWidget(stack, 1);
+    view->hide();
+    ui->mainToolBar->hide();
+    ui->instanceToolBar->hide();
+    ui->newsToolBar->hide();
+    menuBar()->hide();
+    statusBar()->hide();
+    setMinimumSize(820, 500);
+    resize(960, 560);
+
+    connect(m_plomoUpdater, &PlomoPackUpdater::stateChanged, this, &MainWindow::updatePlomoUi);
+    connect(m_plomoVerify, &QAction::triggered, m_plomoUpdater, &PlomoPackUpdater::verify);
+    connect(m_plomoUpdater, &PlomoPackUpdater::verifyProgressChanged, this, [this](int percent) {
+        m_plomoProgress->setValue(percent);
+        m_plomoStatus->setText(tr("Verificando archivos... %1%").arg(percent));
+    });
+    connect(m_plomoUpdater, &PlomoPackUpdater::verified, this, [this](int mismatches) {
+        m_plomoStatus->setText(mismatches == 0   ? tr("Todos los archivos están correctos.")
+                               : mismatches == 1 ? tr("Se encontró 1 archivo dañado, modificado o ausente.")
+                                                 : tr("Se encontraron %1 archivos dañados, modificados o ausentes.").arg(mismatches));
+    });
+    connect(m_plomoUpdater, &PlomoPackUpdater::progressChanged, this, [this](qint64 done, qint64 total) {
+        m_plomoProgress->setValue(total > 0 ? qRound(100.0 * done / total) : 100);
+        constexpr double MiB = 1024.0 * 1024.0;
+        m_plomoStatus->setText(tr("Descargando y verificando archivos... %1 / %2 MB")
+                                   .arg(done / MiB, 0, 'f', 0)
+                                   .arg(total / MiB, 0, 'f', 0));
+    });
+    connect(m_plomoUpdater, &PlomoPackUpdater::errorOccurred, this, [this](const QString& error) {
+        m_plomoStatus->setToolTip(error);
+        // With a previous install and no server, the status already explains that the game can still be played.
+        if (!m_plomoUpdater->canPlayOffline())
+            m_plomoStatus->setText(error);
+    });
+    connect(m_plomoUpdater, &PlomoPackUpdater::installed, this, [this] {
+        refreshInstances();
+        setSelectedInstanceById("PLOMO");
+        startMinecraftPrepare();
+    });
+
+    auto* accounts = APPLICATION->accounts();
+    connect(accounts, &AccountList::defaultAccountChanged, this, &MainWindow::updatePlomoAccount);
+    connect(accounts, &AccountList::listChanged, this, &MainWindow::updatePlomoAccount);
+    connect(accounts, &AccountList::listActivityChanged, this, &MainWindow::updatePlomoAccount);
+    updatePlomoAccount();
+    updatePlomoUi();
+    QTimer::singleShot(0, m_plomoUpdater, &PlomoPackUpdater::check);
+    QTimer::singleShot(0, this, &MainWindow::checkLauncherUpdate);
+}
+
+void MainWindow::updatePlomoAccount()
+{
+    const auto account = APPLICATION->accounts()->defaultAccount();
+    if (account && !account->profileName().isEmpty()) {
+        m_plomoAccounts->setText(account->profileName());
+        const auto face = account->getFace();
+        m_plomoAccounts->setIcon(face.isNull() ? QIcon() : QIcon(face));
+    } else {
+        m_plomoAccounts->setText(tr("Iniciar sesión"));
+        m_plomoAccounts->setIcon(QIcon());
+    }
+}
+
+// Tells the player when a newer launcher exists. Nothing is downloaded or installed here: the notice only opens the
+// download page. launcher.json looks like {"version": "1.0.1", "download_url": "https://playplomo.com/..."}.
+void MainWindow::checkLauncherUpdate()
+{
+    QNetworkRequest request{QUrl(QString::fromLatin1(kLauncherInfoUrl))};
+    request.setTransferTimeout(8000);
+    auto* reply = APPLICATION->network()->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;  // no connection or no launcher.json yet: stay silent
+        const auto object = QJsonDocument::fromJson(reply->readAll()).object();
+        const auto remote = QVersionNumber::fromString(object.value("version").toString());
+        const QVersionNumber current(BuildConfig.VERSION_MAJOR, BuildConfig.VERSION_MINOR, BuildConfig.VERSION_PATCH);
+        if (remote.isNull() || remote <= current)
+            return;
+        // Only web links are followed; anything else falls back to the project site.
+        QUrl url(object.value("download_url").toString());
+        if (!url.isValid() || (url.scheme() != "https" && url.scheme() != "http"))
+            url = QUrl(QString::fromLatin1(kDownloadPageFallback));
+        m_plomoDownloadUrl = url.toString();
+        m_plomoUpdateNotice->setText(tr("Nueva versión del launcher disponible: v%1").arg(remote.toString()));
+        m_plomoUpdateNotice->show();
+    });
+}
+
+void MainWindow::startMinecraftPrepare()
+{
+    auto* instance = dynamic_cast<MinecraftInstance*>(APPLICATION->instances()->getInstanceById("PLOMO"));
+    if (!instance || m_plomoPreparing)
+        return;
+    // Same order as a real launch: metadata, Java, then libraries and assets.
+    m_plomoPrepLaunch = std::shared_ptr<LaunchTask>(LaunchTask::create(instance));
+    m_plomoPrepSteps.clear();
+    m_plomoPrepSteps.push_back(makeShared<MinecraftLoadAndCheck>(instance, Net::Mode::Online));
+    // The Java step reports progress through its LaunchTask, which indexes its step list: it must contain the step.
+    auto javaStep = makeShared<AutoInstallJava>(m_plomoPrepLaunch.get());
+    m_plomoPrepLaunch->appendStep(javaStep);
+    m_plomoPrepSteps.push_back(javaStep);
+    for (const auto& step : instance->createUpdateTask())
+        m_plomoPrepSteps.push_back(step);
+    m_plomoPrepIndex = 0;
+    m_plomoPreparing = true;
+    m_plomoProgress->setValue(0);
+    m_plomoStatus->setText(tr("Preparando Minecraft..."));
+    updatePlomoUi();
+    runNextPrepStep();
+}
+
+void MainWindow::runNextPrepStep()
+{
+    if (m_plomoPrepIndex >= m_plomoPrepSteps.size()) {
+        finishPrepare({});
+        return;
+    }
+    const auto task = m_plomoPrepSteps.at(m_plomoPrepIndex);
+    const int index = m_plomoPrepIndex;
+    const int count = m_plomoPrepSteps.size();
+    m_plomoPrepCurrent = task.get();
+    auto refresh = [this, task, index, count] {
+        if (m_plomoPrepCurrent != task.get())
+            return;
+        const auto total = task->getTotalProgress();
+        const double part = total > 0 ? double(task->getProgress()) / double(total) : 0.0;
+        m_plomoProgress->setValue(qRound(100.0 * (index + part) / count));
+        const auto status = task->getStatus();
+        m_plomoStatus->setText(status.isEmpty() ? tr("Preparando Minecraft...") : status);
+        m_plomoCancel->setEnabled(task->canAbort());
+    };
+    connect(task.get(), &Task::status, this, refresh);
+    connect(task.get(), &Task::progress, this, refresh);
+    connect(task.get(), &Task::abortStatusChanged, this, refresh);
+    const QString name = QString::fromLatin1(task->metaObject()->className());
+    qInfo() << "PLOMO prepare step" << index << name << "start";
+    // A step can report completion more than once (AutoInstallJava does), and a step that is not the current one
+    // must never advance the chain: each handler only counts while its own step is the active one.
+    connect(task.get(), &Task::succeeded, this, [this, index, name] {
+        if (!m_plomoPreparing || m_plomoPrepIndex != index)
+            return;
+        qInfo() << "PLOMO prepare step" << index << name << "succeeded";
+        ++m_plomoPrepIndex;
+        runNextPrepStep();
+    });
+    connect(task.get(), &Task::failed, this, [this, index, name](const QString& reason) {
+        if (!m_plomoPreparing || m_plomoPrepIndex != index)
+            return;
+        qInfo() << "PLOMO prepare step" << index << name << "failed" << reason;
+        finishPrepare(reason);
+    });
+    connect(task.get(), &Task::aborted, this, [this, index, name] {
+        if (!m_plomoPreparing || m_plomoPrepIndex != index)
+            return;
+        qInfo() << "PLOMO prepare step" << index << name << "aborted";
+        finishPrepare(tr("Cancelado"));
+    });
+    task->start();
+    refresh();
+}
+
+void MainWindow::finishPrepare(const QString& error)
+{
+    m_plomoPreparing = false;
+    m_plomoPrepCurrent = nullptr;
+    // The finished task is still emitting this signal; release it on the next turn of the event loop.
+    QTimer::singleShot(0, this, [this] {
+        m_plomoPrepSteps.clear();
+        m_plomoPrepLaunch.reset();
+    });
+    updatePlomoUi();
+    if (!error.isEmpty()) {
+        qWarning() << "PLOMO prepare failed:" << error;
+        m_plomoStatus->setText(tr("PLOMO está instalado, pero Minecraft no terminó de prepararse (%1). Se reintentará al pulsar Jugar.").arg(error));
+    }
+}
+
+void MainWindow::showLaunchProgress(Task* task)
+{
+    m_plomoLaunchTask = task;
+    auto refresh = [this, task] {
+        if (m_plomoLaunchTask != task)
+            return;
+        const auto total = task->getTotalProgress();
+        m_plomoProgress->setValue(total > 0 ? qRound(100.0 * task->getProgress() / total) : 0);
+        const auto status = task->getStatus();
+        if (!status.isEmpty())
+            m_plomoStatus->setText(status);
+        m_plomoCancel->setEnabled(task->canAbort());
+    };
+    connect(task, &Task::status, this, refresh);
+    connect(task, &Task::progress, this, refresh);
+    connect(task, &Task::abortStatusChanged, this, refresh);
+    connect(task, &Task::finished, this, [this, task] {
+        if (m_plomoLaunchTask == task)
+            m_plomoLaunchTask = nullptr;
+    });
+    m_plomoProgress->setValue(0);
+    updatePlomoUi();
+    refresh();
+}
+
+void MainWindow::updatePlomoUi()
+{
+    using State = PlomoPackUpdater::State;
+    const auto state = m_plomoUpdater->state();
+    const bool running = m_selectedInstance && m_selectedInstance->isRunning();
+    const bool offlinePlay = state == State::Failed && m_plomoUpdater->canPlayOffline();
+    const auto version = m_plomoUpdater->version();
+
+    m_plomoProgress->setVisible(state == State::Installing || state == State::Verifying);
+    m_plomoVerify->setEnabled(m_plomoUpdater->isInstalled() && !m_plomoPreparing && !m_plomoLaunching &&
+                              (state == State::Ready || state == State::Update || state == State::Failed));
+    m_plomoCheck->setEnabled(state == State::Ready || state == State::Failed);
+    m_plomoFolder->setEnabled(m_plomoUpdater->isInstalled());
+    m_plomoFooter->setText(version.isEmpty() ? QString() : tr("PLOMO v%1").arg(version));
+
+    // While the game is being prepared everything stays in this window; the stock progress dialog is not used.
+    // Prism flags the instance as running as soon as it starts preparing it, so "starting" is tracked by the launch signals instead.
+    if (m_plomoPreparing) {
+        m_plomoCancel->setVisible(true);
+        m_plomoProgress->setVisible(true);
+        m_plomoAction->setText(tr("INSTALANDO..."));
+        m_plomoAction->setEnabled(false);
+        m_plomoCheck->setEnabled(false);
+        return;
+    }
+    const bool launching = m_plomoLaunching;
+    m_plomoCancel->setVisible(launching);
+    if (launching) {
+        m_plomoProgress->setVisible(true);
+        m_plomoAction->setText(tr("INICIANDO..."));
+        m_plomoAction->setEnabled(false);
+        m_plomoCheck->setEnabled(false);
+        if (!m_plomoLaunchTask)
+            m_plomoStatus->setText(tr("Preparando el juego..."));
+        return;
+    }
+
+    if (state != State::Failed)
+        m_plomoStatus->setToolTip({});
+    m_plomoAction->setEnabled(state != State::Checking && state != State::Installing && state != State::Verifying);
+
+    switch (state) {
+        case State::Checking:
+            m_plomoAction->setText(tr("COMPROBANDO..."));
+            m_plomoStatus->setText(tr("Buscando actualizaciones..."));
+            break;
+        case State::Download:
+            m_plomoAction->setText(tr("DESCARGAR"));
+            m_plomoStatus->setText(tr("PLOMO aún no está instalado."));
+            break;
+        case State::Update:
+            m_plomoAction->setText(tr("ACTUALIZAR"));
+            m_plomoStatus->setText(tr("Hay una actualización disponible."));
+            break;
+        case State::Ready:
+            m_plomoAction->setText(running ? tr("EN JUEGO") : tr("JUGAR"));
+            m_plomoStatus->setText(tr("PLOMO está actualizado."));
+            break;
+        case State::Installing:
+            m_plomoAction->setText(tr("INSTALANDO..."));
+            m_plomoStatus->setText(tr("Descargando y verificando archivos..."));
+            break;
+        case State::Verifying:
+            m_plomoAction->setText(tr("VERIFICANDO..."));
+            m_plomoStatus->setText(tr("Verificando archivos... %1%").arg(m_plomoProgress->value()));
+            break;
+        case State::Failed:
+            m_plomoAction->setText(offlinePlay ? (running ? tr("EN JUEGO") : tr("JUGAR")) : tr("REINTENTAR"));
+            if (offlinePlay)
+                m_plomoStatus->setText(tr("Sin conexión con el servidor de PLOMO. Se jugará la versión instalada."));
+            break;
+    }
+    if ((state == State::Ready || offlinePlay) && running)
+        m_plomoAction->setEnabled(false);
+}
 
 QMenu* MainWindow::createPopupMenu()
 {
@@ -948,7 +1415,6 @@ void MainWindow::processURLs(QList<QUrl> urls)
         if (url.scheme().isEmpty())
             url.setScheme("file");
 
-        ModPlatform::IndexedVersion version;
         QMap<QString, QString> extra_info;
         QUrl local_url;
         if (!url.isLocalFile()) {  // download the remote resource and identify
@@ -956,67 +1422,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
             const bool isExternalURLImport = (url.host().toLower() == "import") || (url.path().startsWith("/import", Qt::CaseInsensitive));
 
             QUrl dl_url;
-            if (url.scheme() == "curseforge" || (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME && url.host() == "install")) {
-                // need to find the download link for the modpack / resource
-                // format of url curseforge://install?addonId=IDHERE&fileId=IDHERE
-                // format of url binaryname://install?platform=curseforge&addonId=IDHERE&fileId=IDHERE
-                QUrlQuery query(url);
-
-                // check if this is a binaryname:// url
-                if (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) {
-                    // check this is an curseforge platform request
-                    if (query.queryItemValue("platform").toLower() != "curseforge") {
-                        qDebug() << "Invalid mod distribution platform:" << query.queryItemValue("platform");
-                        continue;
-                    }
-                }
-
-                if (query.allQueryItemValues("addonId").isEmpty() || query.allQueryItemValues("fileId").isEmpty()) {
-                    qDebug() << "Invalid curseforge link:" << url;
-                    continue;
-                }
-
-                auto addonId = query.allQueryItemValues("addonId")[0];
-                auto fileId = query.allQueryItemValues("fileId")[0];
-
-                extra_info.insert("pack_id", addonId);
-                extra_info.insert("pack_version_id", fileId);
-
-                auto api = FlameAPI();
-                auto [job, array] = api.getFile(addonId, fileId);
-
-                connect(job.get(), &Task::failed, this,
-                        [this](QString reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->show(); });
-                connect(job.get(), &Task::succeeded, this, [this, array, addonId, fileId, &dl_url, &version] {
-                    qDebug() << "Returned CFURL Json:\n" << array->toStdString().c_str();
-                    auto doc = Json::requireDocument(*array);
-                    auto data = doc.object()["data"].toObject();
-                    // No way to find out if it's a mod or a modpack before here
-                    // And also we need to check if it ends with .zip, instead of any better way
-                    version = FlameMod::loadIndexedPackVersion(data);
-                    auto fileName = version.fileName;
-
-                    // Have to use ensureString then use QUrl to get proper url encoding
-                    dl_url = QUrl(version.downloadUrl);
-                    if (!dl_url.isValid()) {
-                        CustomMessageBox::selectable(
-                            this, tr("Error"),
-                            tr("The modpack, mod, or resource %1 is blocked for third-parties! Please download it manually.").arg(fileName),
-                            QMessageBox::Critical)
-                            ->show();
-                        return;
-                    }
-
-                    QFileInfo dl_file(dl_url.fileName());
-                });
-
-                {  // drop stack
-                    ProgressDialog dlUrlDialod(this);
-                    dlUrlDialod.setSkipButton(true, tr("Abort"));
-                    dlUrlDialod.execWithTask(job.get());
-                }
-
-            } else if (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME && !isExternalURLImport) {
+            if (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME && !isExternalURLImport) {
                 QVariantMap receivedData;
                 const QUrlQuery query(url.query());
                 const auto items = query.queryItems();
@@ -1153,19 +1559,19 @@ void MainWindow::processURLs(QList<QUrl> urls)
 
         switch (type) {
             case ModPlatform::ResourceType::ResourcePack:
-                minecraftInst->resourcePackList()->installResourceWithFlameMetadata(localFileName, version);
+                minecraftInst->resourcePackList()->installResource(localFileName);
                 break;
             case ModPlatform::ResourceType::TexturePack:
-                minecraftInst->texturePackList()->installResourceWithFlameMetadata(localFileName, version);
+                minecraftInst->texturePackList()->installResource(localFileName);
                 break;
             case ModPlatform::ResourceType::DataPack:
                 qWarning() << "Importing of Data Packs not supported at this time. Ignoring" << localFileName;
                 break;
             case ModPlatform::ResourceType::Mod:
-                minecraftInst->loaderModList()->installResourceWithFlameMetadata(localFileName, version);
+                minecraftInst->loaderModList()->installResource(localFileName);
                 break;
             case ModPlatform::ResourceType::ShaderPack:
-                minecraftInst->shaderPackList()->installResourceWithFlameMetadata(localFileName, version);
+                minecraftInst->shaderPackList()->installResource(localFileName);
                 break;
             case ModPlatform::ResourceType::World:
                 minecraftInst->worldList()->installWorld(localFileInfo);
@@ -1379,6 +1785,13 @@ void MainWindow::globalSettingsClosed()
     // This needs to be done to prevent UI elements disappearing in the event the config is changed
     // but Prism Launcher exits abnormally, causing the window state to never be saved:
     APPLICATION->settings()->set("MainWindowState", QString::fromUtf8(saveState().toBase64()));
+    if (m_plomoUpdater) {
+        ui->mainToolBar->hide();
+        ui->instanceToolBar->hide();
+        ui->newsToolBar->hide();
+        menuBar()->hide();
+        statusBar()->hide();
+    }
     update();
 }
 
@@ -1533,35 +1946,6 @@ void MainWindow::on_actionExportInstanceZip_triggered()
     if (m_selectedInstance) {
         ExportInstanceDialog dlg(m_selectedInstance, this);
         dlg.exec();
-    }
-}
-
-void MainWindow::on_actionExportInstanceMrPack_triggered()
-{
-    if (m_selectedInstance) {
-        auto instance = dynamic_cast<MinecraftInstance*>(m_selectedInstance);
-        if (instance != nullptr) {
-            ExportPackDialog dlg(instance, this);
-            dlg.exec();
-        }
-    }
-}
-
-void MainWindow::on_actionExportInstanceFlamePack_triggered()
-{
-    if (m_selectedInstance) {
-        auto instance = dynamic_cast<MinecraftInstance*>(m_selectedInstance);
-        if (instance) {
-            if (auto cmp = instance->getPackProfile()->getComponent("net.minecraft");
-                cmp && cmp->getVersionFile() && cmp->getVersionFile()->type == "snapshot") {
-                QMessageBox msgBox(this);
-                msgBox.setText("Snapshots are currently not supported by CurseForge modpacks.");
-                msgBox.exec();
-                return;
-            }
-            ExportPackDialog dlg(instance, this, ModPlatform::ResourceProvider::FLAME);
-            dlg.exec();
-        }
     }
 }
 
@@ -1786,4 +2170,6 @@ void MainWindow::refreshCurrentInstance()
 {
     auto current = view->selectionModel()->currentIndex();
     instanceChanged(current, current);
+    if (m_plomoUpdater)
+        updatePlomoUi();
 }

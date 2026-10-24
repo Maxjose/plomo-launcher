@@ -31,6 +31,7 @@ build
 # Install dirs
 install
 /install-*
+/vcpkg_installed/
 
 # Ctags File
 tags
@@ -62,3 +63,10 @@ flatbuild
 
 # Snap
 *.snap
+
+# PLOMO
+__pycache__/
+/plomo/installer/output/
+/plomo/installer/work/
+accounts.json
+PLOMO.cfg
