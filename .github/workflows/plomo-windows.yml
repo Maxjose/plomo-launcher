@@ -83,3 +83,26 @@ jobs:
         with:
           name: PLOMO-Setup-unsigned
           path: plomo/installer/output/*.exe
+
+  release:
+    # Publishes the installer built above when a v* tag is pushed. Unsigned until SignPath Foundation approves the project.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PLOMO-Setup-unsigned
+          path: dist
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "PLOMO Launcher $GITHUB_REF_NAME" \
+            --notes "Installer for Windows 10/11 (x64), built by GitHub Actions from this repository. This build is not yet code-signed, so Windows SmartScreen may warn about an unknown publisher. Code signing is pending approval by SignPath Foundation. Instalador para Windows 10/11 (x64), compilado por GitHub Actions desde este repositorio. Esta versión aún no está firmada, por lo que SmartScreen puede avisar de editor desconocido."
