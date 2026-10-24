@@ -1,0 +1,85 @@
+name: PLOMO Windows
+
+on:
+  push:
+    branches: [plomo]
+    tags: ["v*"]
+  pull_request:
+    branches: [plomo]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Enter VS developer shell
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+          vsversion: 2022
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          aqtversion: "==3.1.*"
+          version: 6.10.2
+          modules: qtimageformats qtnetworkauth
+          cache: true
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G "Ninja Multi-Config"
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DLauncher_BUILD_PLATFORM=plomo
+          -DLauncher_LOGIN_CALLBACK_URL=https://playplomo.com/login-success/
+          -DLauncher_META_URL=https://cdn.playplomo.com/meta/v1/
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --prefix install
+          cmake --install build --config Release --prefix install --component portable
+
+      - name: Stage installer contents
+        shell: pwsh
+        run: |
+          $crt = Get-ChildItem "$env:VCToolsRedistDir/x64" -Directory -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
+          python plomo/tools/package_stage.py --install install --out stage --crt $crt.FullName
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DStageDir=$env:GITHUB_WORKSPACE\stage" plomo/installer/plomo.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload unsigned launcher files
+        uses: actions/upload-artifact@v4
+        with:
+          name: PLOMO-launcher-files-unsigned
+          path: stage/**
+
+      - name: Upload unsigned installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PLOMO-Setup-unsigned
+          path: plomo/installer/output/*.exe

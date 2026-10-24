@@ -1,9 +1,11 @@
 ; Instalador del launcher de PLOMO (Inno Setup 6).
-; Empaqueta la carpeta limpia que genera ..\tools\package_preview.py (LAUNCHER\tools) (solo programa: sin cuentas, ajustes ni datos del juego).
-; Se genera con INSTALADOR\build_installer.bat.
+; Empaqueta la carpeta limpia que genera plomo\tools\package_stage.py (solo programa: sin cuentas, ajustes ni datos del juego).
+; Lo compila .github\workflows\plomo-windows.yml: ISCC /DStageDir=<carpeta> plomo.iss
 
 #define AppName "PLOMO"
-#define StageDir "..\work\portable-clean"
+#ifndef StageDir
+  #define StageDir "..\..\stage"
+#endif
 ; La version sale del propio PLOMO.exe (1.0.0.0); RemoveFileExt quita el ultimo ".0" y deja 1.0.0.
 #ifndef AppVersion
   #define AppVersion RemoveFileExt(GetVersionNumbersString(StageDir + "\PLOMO.exe"))
@@ -29,7 +31,7 @@ WizardStyle=modern
 DisableWelcomePage=no
 WizardImageFile=assets\side-164x314.bmp,assets\side-246x471.bmp,assets\side-328x628.bmp
 WizardSmallImageFile=assets\small-55x55.bmp,assets\small-83x83.bmp,assets\small-110x110.bmp
-SetupIconFile=..\source\program_info\PLOMO.ico
+SetupIconFile=..\..\program_info\PLOMO.ico
 UninstallDisplayIcon={app}\PLOMO.exe
 UninstallDisplayName={#AppName}
 OutputDir=output
