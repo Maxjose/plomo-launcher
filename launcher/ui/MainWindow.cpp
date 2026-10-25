@@ -44,6 +44,7 @@
 
 #include "MainWindow.h"
 #include "PlomoPackUpdater.h"
+#include "PlomoSelfUpdater.h"
 #include "ui/PlomoPages.h"
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
@@ -617,7 +618,12 @@ void MainWindow::setupPlomoUi()
     bottom->addStretch();
     bottom->addWidget(m_plomoUpdateNotice, 0, Qt::AlignBottom | Qt::AlignRight);
     layout->addLayout(bottom);
-    connect(m_plomoUpdateNotice, &QPushButton::clicked, this, [this] { DesktopServices::openUrl(QUrl(m_plomoDownloadUrl)); });
+    connect(m_plomoUpdateNotice, &QPushButton::clicked, this, [this] {
+        if (m_plomoSelfUpdateReady)
+            startLauncherSelfUpdate();
+        else
+            DesktopServices::openUrl(QUrl(m_plomoDownloadUrl));
+    });
 
     connect(m_plomoAction, &QPushButton::clicked, this, [this] {
         using State = PlomoPackUpdater::State;
@@ -659,6 +665,25 @@ void MainWindow::setupPlomoUi()
     auto* stack = new QStackedWidget(ui->centralWidget);
     stack->setStyleSheet(plomoStyleSheet());
     stack->addWidget(panel);
+    m_plomoStack = stack;
+    m_plomoHome = panel;
+    m_plomoUpdateScreen = new PlomoUpdateScreen(stack);
+    stack->addWidget(m_plomoUpdateScreen);
+    m_plomoSelfUpdater = new PlomoSelfUpdater(APPLICATION->network(), this);
+    connect(m_plomoSelfUpdater, &PlomoSelfUpdater::progressChanged, this, [this](int percent) {
+        m_plomoUpdateScreen->setProgress(percent);
+        m_plomoUpdateScreen->setStatus(percent >= 0 ? tr("Descargando la actualización... %1%").arg(percent)
+                                                    : tr("Descargando la actualización..."));
+    });
+    connect(m_plomoSelfUpdater, &PlomoSelfUpdater::failed, this, [this](const QString& message) {
+        m_plomoStack->setCurrentWidget(m_plomoHome);
+        QMessageBox::warning(this, tr("Actualizar el launcher"), message);
+    });
+    connect(m_plomoSelfUpdater, &PlomoSelfUpdater::launched, this, [this] {
+        m_plomoUpdateScreen->setProgress(100);
+        m_plomoUpdateScreen->setStatus(tr("Instalando... el launcher se reiniciará."));
+        QTimer::singleShot(400, qApp, &QCoreApplication::quit);  // the installer needs the files unlocked
+    });
     auto* accountsPage = new PlomoAccountsPage(stack);
     auto* languagePage = new PlomoLanguagePage(stack);
     auto* memoryPage = new PlomoMemoryPage(stack);
@@ -753,10 +778,13 @@ void MainWindow::updatePlomoAccount()
 // download page. launcher.json looks like {"version": "1.0.1", "download_url": "https://playplomo.com/..."}.
 void MainWindow::checkLauncherUpdate()
 {
-    QNetworkRequest request{QUrl(QString::fromLatin1(kLauncherInfoUrl))};
+    // A staging address (hidden setting) lets the self-update be tested without touching the real launcher.json.
+    const QString infoOverride = APPLICATION->settings()->get("PlomoLauncherInfoUrl").toString();
+    const bool staging = !infoOverride.isEmpty();
+    QNetworkRequest request{QUrl(staging ? infoOverride : QString::fromLatin1(kLauncherInfoUrl))};
     request.setTransferTimeout(8000);
     auto* reply = APPLICATION->network()->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, staging] {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError)
             return;  // no connection or no launcher.json yet: stay silent
@@ -770,9 +798,35 @@ void MainWindow::checkLauncherUpdate()
         if (!url.isValid() || (url.scheme() != "https" && url.scheme() != "http"))
             url = QUrl(QString::fromLatin1(kDownloadPageFallback));
         m_plomoDownloadUrl = url.toString();
-        m_plomoUpdateNotice->setText(tr("Nueva versión del launcher disponible: v%1").arg(remote.toString()));
+        // Self-update needs the installer address and its SHA-256 in launcher.json, and an installed (not portable) launcher.
+        const QUrl installerUrl(object.value("installer_url").toString());
+        const QString sha256 = object.value("sha256").toString().toLower();
+        m_plomoSelfUpdateReady = PlomoSelfUpdater::canSelfUpdate() && PlomoSelfUpdater::isTrustedUrl(installerUrl, staging) &&
+                                 PlomoSelfUpdater::isValidSha256(sha256);
+        m_plomoInstallerUrl = installerUrl.toString();
+        m_plomoInstallerSha = sha256;
+        m_plomoRemoteVersion = remote.toString();
+        m_plomoUpdateNotice->setText(m_plomoSelfUpdateReady ? tr("Actualizar el launcher a v%1").arg(remote.toString())
+                                                            : tr("Nueva versión del launcher disponible: v%1").arg(remote.toString()));
         m_plomoUpdateNotice->show();
     });
+}
+
+void MainWindow::startLauncherSelfUpdate()
+{
+    using State = PlomoPackUpdater::State;
+    const auto state = m_plomoUpdater->state();
+    const bool busy = m_plomoPreparing || m_plomoLaunching || (m_selectedInstance && m_selectedInstance->isRunning()) ||
+                      state == State::Installing || state == State::Verifying || state == State::Checking;
+    if (busy) {
+        QMessageBox::information(this, tr("Actualizar el launcher"),
+                                 tr("Espera a que termine lo que está en curso (descarga, verificación o partida) y vuelve a pulsar el aviso de actualización."));
+        return;
+    }
+    m_plomoUpdateScreen->setStatus(tr("Descargando la actualización..."));
+    m_plomoUpdateScreen->setProgress(0);
+    m_plomoStack->setCurrentWidget(m_plomoUpdateScreen);
+    m_plomoSelfUpdater->start(QUrl(m_plomoInstallerUrl), m_plomoInstallerSha, m_plomoRemoteVersion);
 }
 
 void MainWindow::startMinecraftPrepare()

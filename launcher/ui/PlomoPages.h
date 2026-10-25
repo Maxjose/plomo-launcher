@@ -8,6 +8,7 @@
 
 class QLabel;
 class QListWidget;
+class QProgressBar;
 class QPushButton;
 class QSlider;
 class QVBoxLayout;
@@ -47,6 +48,19 @@ class PlomoPage : public PlomoBackdrop {
 
    private:
     QVBoxLayout* m_body;
+};
+
+// Full-window screen shown while the launcher updates itself: nothing else can be clicked until the installer takes over.
+class PlomoUpdateScreen : public PlomoBackdrop {
+    Q_OBJECT
+   public:
+    explicit PlomoUpdateScreen(QWidget* parent);
+    void setStatus(const QString& text);
+    void setProgress(int percent);  // negative: size unknown, shows a busy bar
+
+   private:
+    QLabel* m_status;
+    QProgressBar* m_bar;
 };
 
 class PlomoAccountsPage : public PlomoPage {

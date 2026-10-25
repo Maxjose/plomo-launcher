@@ -878,6 +878,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         // Test channel of the PLOMO modpack (manifest-alpha.json instead of manifest.json)
         m_settings->registerSetting("PlomoAlphaChannel", false);
+        // Staging address of launcher.json (testing the launcher self-update); empty uses the real one.
+        m_settings->registerSetting("PlomoLauncherInfoUrl", "");
 
         m_settings->registerSetting("MetaRefreshOnLaunch", true);
         m_settings->registerSetting("CloseAfterLaunch", false);

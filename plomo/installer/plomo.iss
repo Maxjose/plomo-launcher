@@ -42,6 +42,8 @@ Compression=lzma2/max
 SolidCompression=yes
 ; Si PLOMO esta abierto al actualizar, Windows ofrece cerrarlo en vez de fallar.
 CloseApplications=yes
+; PLOMO is started again by the [Run] entry below (only after an in-launcher update); Restart Manager must not do it too.
+RestartApplications=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -61,8 +63,15 @@ Name: "{autodesktop}\PLOMO"; Filename: "{app}\PLOMO.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\PLOMO.exe"; Description: "{cm:LaunchProgram,PLOMO}"; Flags: nowait postinstall skipifsilent
+; Update started from inside the launcher (it runs this installer with /VERYSILENT /PLOMOUPDATE=1): open PLOMO again.
+Filename: "{app}\PLOMO.exe"; Flags: nowait; Check: IsPlomoUpdate
 
 [Code]
+function IsPlomoUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:PLOMOUPDATE|0}') = '1';
+end;
+
 // El desinstalador solo quita lo que instalo el setup. Lo que el launcher creo despues (modpack, cuentas, mundos) se conserva
 // salvo que el jugador lo pida de forma expresa.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

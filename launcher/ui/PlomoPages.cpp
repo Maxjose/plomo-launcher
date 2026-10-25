@@ -14,6 +14,7 @@
 #include <QPainter>
 #include <QProcess>
 #include <QTranslator>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSlider>
@@ -104,6 +105,19 @@ class PlomoEnglish : public QTranslator {
         {QStringLiteral("Verificar archivos"), QStringLiteral("Verify files")},
         {QStringLiteral("Versiones alpha (pruebas)"), QStringLiteral("Alpha versions (testing)")},
         {QStringLiteral("Versiones alpha"), QStringLiteral("Alpha versions")},
+        {QStringLiteral("Actualizar el launcher a v%1"), QStringLiteral("Update the launcher to v%1")},
+        {QStringLiteral("Actualizando PLOMO"), QStringLiteral("Updating PLOMO")},
+        {QStringLiteral("No cierres el launcher. Se reiniciará solo cuando termine."), QStringLiteral("Do not close the launcher. It will restart by itself when done.")},
+        {QStringLiteral("Descargando la actualización... %1%"), QStringLiteral("Downloading the update... %1%")},
+        {QStringLiteral("Descargando la actualización..."), QStringLiteral("Downloading the update...")},
+        {QStringLiteral("Instalando... el launcher se reiniciará."), QStringLiteral("Installing... the launcher will restart.")},
+        {QStringLiteral("Actualizar el launcher"), QStringLiteral("Update the launcher")},
+        {QStringLiteral("Espera a que termine lo que está en curso (descarga, verificación o partida) y vuelve a pulsar el aviso de actualización."), QStringLiteral("Wait for the current task (download, verification or game) to finish, then click the update notice again.")},
+        {QStringLiteral("No se pudo guardar la actualización en la carpeta temporal."), QStringLiteral("Could not save the update in the temporary folder.")},
+        {QStringLiteral("No se pudo escribir la actualización en el disco."), QStringLiteral("Could not write the update to disk.")},
+        {QStringLiteral("No se pudo descargar la actualización: %1"), QStringLiteral("Could not download the update: %1")},
+        {QStringLiteral("La descarga está dañada o no es la esperada (la suma SHA-256 no coincide). No se instaló nada."), QStringLiteral("The download is damaged or not the expected file (SHA-256 does not match). Nothing was installed.")},
+        {QStringLiteral("No se pudo iniciar el instalador de la actualización."), QStringLiteral("Could not start the update installer.")},
         {QStringLiteral("Las versiones alpha son de pruebas y pueden fallar o tener partidas incompletas. Actívalas solo si vas a probar el juego con otros jugadores. ¿Activarlas?"), QStringLiteral("Alpha versions are for testing and may break or have unfinished game modes. Turn them on only if you are going to test the game with other players. Turn them on?")},
         {QStringLiteral("PLOMO v%1 (alpha)"), QStringLiteral("PLOMO v%1 (alpha)")},
         {QStringLiteral("VERIFICANDO..."), QStringLiteral("VERIFYING...")},
@@ -215,6 +229,53 @@ void PlomoBackdrop::paintEvent(QPaintEvent*)
     bottom.setColorAt(0.0, QColor(8, 10, 14, 0));
     bottom.setColorAt(1.0, QColor(8, 10, 14, 170));
     p.fillRect(rect(), bottom);
+}
+
+PlomoUpdateScreen::PlomoUpdateScreen(QWidget* parent) : PlomoBackdrop(parent, Mode::Page)
+{
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(40, 28, 40, 28);
+    auto* card = new QFrame(this);
+    card->setObjectName("plomoCard");
+    card->setFixedWidth(520);
+    auto* layout = new QVBoxLayout(card);
+    layout->setContentsMargins(28, 24, 28, 24);
+    layout->setSpacing(12);
+    auto* title = new QLabel(tr("Actualizando PLOMO"), card);
+    title->setObjectName("plomoTitle");
+    layout->addWidget(title);
+    auto* hint = new QLabel(tr("No cierres el launcher. Se reiniciará solo cuando termine."), card);
+    hint->setObjectName("plomoHint");
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    m_status = new QLabel(card);
+    m_status->setObjectName("plomoStatus");
+    layout->addWidget(m_status);
+    m_bar = new QProgressBar(card);
+    m_bar->setRange(0, 100);
+    layout->addWidget(m_bar);
+    auto* center = new QHBoxLayout();
+    center->addStretch();
+    center->addWidget(card);
+    center->addStretch();
+    outer->addStretch(1);
+    outer->addLayout(center);
+    outer->addStretch(1);
+}
+
+void PlomoUpdateScreen::setStatus(const QString& text)
+{
+    m_status->setText(text);
+}
+
+void PlomoUpdateScreen::setProgress(int percent)
+{
+    if (percent < 0) {
+        m_bar->setRange(0, 0);  // busy
+        return;
+    }
+    m_bar->setRange(0, 100);
+    m_bar->setValue(percent);
 }
 
 PlomoPage::PlomoPage(const QString& title, const QString& subtitle, QWidget* parent) : PlomoBackdrop(parent, Mode::Page)

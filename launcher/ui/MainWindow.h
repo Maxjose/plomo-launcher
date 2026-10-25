@@ -240,6 +240,7 @@ class MainWindow : public QMainWindow {
     void showLaunchProgress(Task* task);
     void startMinecraftPrepare();
     void checkLauncherUpdate();
+    void startLauncherSelfUpdate();
     void runNextPrepStep();
     void finishPrepare(const QString& error);
 
@@ -277,6 +278,15 @@ class MainWindow : public QMainWindow {
     QAction* m_plomoAlpha = nullptr;
     QPushButton* m_plomoUpdateNotice = nullptr;
     QString m_plomoDownloadUrl;
+    // Launcher self-update (see PlomoSelfUpdater): filled from launcher.json when a newer version exists.
+    bool m_plomoSelfUpdateReady = false;
+    QString m_plomoInstallerUrl;
+    QString m_plomoInstallerSha;
+    QString m_plomoRemoteVersion;
+    class PlomoSelfUpdater* m_plomoSelfUpdater = nullptr;
+    class PlomoUpdateScreen* m_plomoUpdateScreen = nullptr;
+    class QStackedWidget* m_plomoStack = nullptr;
+    QWidget* m_plomoHome = nullptr;
     QPointer<Task> m_plomoLaunchTask;
     bool m_plomoLaunching = false;
     // Minecraft/Java/libraries/assets are fetched right after the pack so that the first Play has nothing left to download.

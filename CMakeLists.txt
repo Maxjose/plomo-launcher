@@ -184,7 +184,7 @@ set(Launcher_LOGIN_CALLBACK_URL "https://playplomo.com/login-success/" CACHE STR
 ######## Set version numbers ########
 set(Launcher_VERSION_MAJOR 1)
 set(Launcher_VERSION_MINOR 0)
-set(Launcher_VERSION_PATCH 3)
+set(Launcher_VERSION_PATCH 4)
 
 set(Launcher_VERSION_NAME "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}")
 set(Launcher_VERSION_NAME4 "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}.0")

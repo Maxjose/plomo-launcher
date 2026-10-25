@@ -744,6 +744,8 @@ SET(LAUNCHER_SOURCES
     ui/MainWindow.cpp
     PlomoPackUpdater.h
     PlomoPackUpdater.cpp
+    PlomoSelfUpdater.h
+    PlomoSelfUpdater.cpp
     ui/PlomoPages.h
     ui/PlomoPages.cpp
     ui/InstanceWindow.h
