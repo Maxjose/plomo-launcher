@@ -274,6 +274,7 @@ class MainWindow : public QMainWindow {
     QPushButton* m_plomoFolder = nullptr;
     QPushButton* m_plomoCancel = nullptr;
     QAction* m_plomoVerify = nullptr;
+    QAction* m_plomoAlpha = nullptr;
     QPushButton* m_plomoUpdateNotice = nullptr;
     QString m_plomoDownloadUrl;
     QPointer<Task> m_plomoLaunchTask;

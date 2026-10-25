@@ -95,7 +95,7 @@ jobs:
           path: plomo/installer/output/*.exe
 
   release:
-    # Publishes the installer built above when a v* tag is pushed. The installer is not code-signed; checksums and a provenance attestation are published instead.
+    # Publishes the installer built above when a v* tag is pushed, as the latest release. The installer is not code-signed; checksums and a provenance attestation are published instead.
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -109,10 +109,12 @@ jobs:
           name: PLOMO-Setup-unsigned
           path: dist
 
-      - name: Create pre-release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          (cd dist && sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" dist/*.exe dist/SHA256SUMS.txt --prerelease --title "PLOMO Launcher $GITHUB_REF_NAME" --notes-file plomo/release-notes.md
+          # Same file under a fixed name, so /releases/latest/download/PLOMO-Setup.exe always points at the newest installer.
+          cp dist/PLOMO-Setup-*.exe dist/PLOMO-Setup.exe
+          (cd dist && sha256sum PLOMO-Setup*.exe > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" dist/PLOMO-Setup-*.exe dist/PLOMO-Setup.exe dist/SHA256SUMS.txt --latest --title "PLOMO Launcher $GITHUB_REF_NAME" --notes-file plomo/release-notes.md

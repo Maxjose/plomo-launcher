@@ -6,6 +6,7 @@ Launcher oficial del modpack **PLOMO** (Minecraft 1.20.1, Forge 47.4.16): instal
 
 - Download / Descarga: <https://playplomo.com/launcher/>
 - Releases: <https://github.com/Maxjose/plomo-launcher/releases>
+- Latest installer / Último instalador: <https://github.com/Maxjose/plomo-launcher/releases/latest/download/PLOMO-Setup.exe>
 - Privacy policy / Política de privacidad: [PRIVACY.md](PRIVACY.md)
 
 ## Origin and license
@@ -22,8 +23,8 @@ Windows x64, Visual Studio 2022 (C++), Qt 6.10.2 (`qtimageformats`, `qtnetworkau
 
 The installers are built by GitHub Actions from this repository and are **not code-signed**, so Windows SmartScreen may warn about an unknown publisher the first time (*More info* → *Run anyway*). You can check that a download is the one built from this repository:
 
-- **SHA-256:** compare `Get-FileHash PLOMO-Setup-<version>.exe` with the `SHA256SUMS.txt` attached to the [release](https://github.com/Maxjose/plomo-launcher/releases).
-- **Build provenance:** `gh attestation verify PLOMO-Setup-<version>.exe --repo Maxjose/plomo-launcher` confirms that GitHub Actions built the file from this repository.
+- **SHA-256:** compare `Get-FileHash PLOMO-Setup.exe` with the `SHA256SUMS.txt` attached to the [release](https://github.com/Maxjose/plomo-launcher/releases).
+- **Build provenance:** `gh attestation verify PLOMO-Setup.exe --repo Maxjose/plomo-launcher` confirms that GitHub Actions built the file from this repository.
 
 Privacy: see [PRIVACY.md](PRIVACY.md). The launcher has no telemetry.
 

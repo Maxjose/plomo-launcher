@@ -31,6 +31,11 @@ public:
     QString version() const { return m_manifest.value("version").toString(); }
     // Version actually installed on disk; empty when nothing is installed.
     QString installedVersion() const;
+    // Channel the installed version came from ("alpha" or empty for the stable release).
+    QString installedChannel() const;
+    // Picks which manifest check() reads: the stable release (default) or the alpha one. Call check() afterwards.
+    void setAlphaChannel(bool alpha) { m_alpha = alpha; }
+    bool alphaChannel() const { return m_alpha; }
     bool isInstalled() const;
     // True when the manifest could not be fetched but a previous install can still be played.
     bool canPlayOffline() const { return m_canPlayOffline; }
@@ -64,6 +69,7 @@ private:
     QString sha256(const QString& path) const;
 
     QString m_instanceRoot;
+    bool m_alpha = false;
     QNetworkAccessManager m_network;
     QJsonObject m_manifest;
     QUrl m_baseUrl;

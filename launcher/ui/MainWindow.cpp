@@ -512,6 +512,7 @@ void MainWindow::setupPlomoUi()
         instanceDir = QDir(APPLICATION->dataRoot()).filePath(instanceDir);
     m_plomoRoot = QDir(instanceDir).filePath("PLOMO");
     m_plomoUpdater = new PlomoPackUpdater(m_plomoRoot, this);
+    m_plomoUpdater->setAlphaChannel(APPLICATION->settings()->get("PlomoAlphaChannel").toBool());
 
     setWindowIcon(QIcon(":/plomo/icon.png"));
     QGuiApplication::setApplicationDisplayName(QString());
@@ -542,6 +543,9 @@ void MainWindow::setupPlomoUi()
     auto* languageAction = settingsMenu->addAction(tr("Idioma"));
     auto* memoryAction = settingsMenu->addAction(tr("Memoria"));
     m_plomoVerify = settingsMenu->addAction(tr("Verificar archivos"));
+    m_plomoAlpha = settingsMenu->addAction(tr("Versiones alpha (pruebas)"));
+    m_plomoAlpha->setCheckable(true);
+    m_plomoAlpha->setChecked(m_plomoUpdater->alphaChannel());
     settingsMenu->addSeparator();
     settingsMenu->addAction(tr("Abrir carpeta del launcher"), this, &MainWindow::on_actionViewLauncherRootFolder_triggered);
     settings->setMenu(settingsMenu);
@@ -682,6 +686,18 @@ void MainWindow::setupPlomoUi()
 
     connect(m_plomoUpdater, &PlomoPackUpdater::stateChanged, this, &MainWindow::updatePlomoUi);
     connect(m_plomoVerify, &QAction::triggered, m_plomoUpdater, &PlomoPackUpdater::verify);
+    connect(m_plomoAlpha, &QAction::triggered, this, [this](bool alpha) {
+        if (alpha && QMessageBox::warning(this, tr("Versiones alpha"),
+                                          tr("Las versiones alpha son de pruebas y pueden fallar o tener partidas incompletas. "
+                                             "Actívalas solo si vas a probar el juego con otros jugadores. ¿Activarlas?"),
+                                          QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+            m_plomoAlpha->setChecked(false);
+            return;
+        }
+        APPLICATION->settings()->set("PlomoAlphaChannel", alpha);
+        m_plomoUpdater->setAlphaChannel(alpha);
+        m_plomoUpdater->check();  // the other channel may carry another version: the button turns into UPDATE
+    });
     connect(m_plomoUpdater, &PlomoPackUpdater::verifyProgressChanged, this, [this](int percent) {
         m_plomoProgress->setValue(percent);
         m_plomoStatus->setText(tr("Verificando archivos... %1%").arg(percent));
@@ -887,7 +903,13 @@ void MainWindow::updatePlomoUi()
                               (state == State::Ready || state == State::Update || state == State::Failed));
     m_plomoCheck->setEnabled(state == State::Ready || state == State::Failed);
     m_plomoFolder->setEnabled(m_plomoUpdater->isInstalled());
-    m_plomoFooter->setText(version.isEmpty() ? QString() : tr("PLOMO v%1").arg(version));
+    const bool alphaInstalled = m_plomoUpdater->isInstalled() && m_plomoUpdater->installedChannel() == "alpha";
+    m_plomoFooter->setText(version.isEmpty() ? QString()
+                           : alphaInstalled  ? tr("PLOMO v%1 (alpha)").arg(version)
+                                             : tr("PLOMO v%1").arg(version));
+    // Switching channel while something is running would change the manifest under it.
+    m_plomoAlpha->setEnabled(!m_plomoPreparing && !m_plomoLaunching && !running &&
+                             (state == State::Ready || state == State::Update || state == State::Download || state == State::Failed));
 
     // While the game is being prepared everything stays in this window; the stock progress dialog is not used.
     // Prism flags the instance as running as soon as it starts preparing it, so "starting" is tracked by the launch signals instead.

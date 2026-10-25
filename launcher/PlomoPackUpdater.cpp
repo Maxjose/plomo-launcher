@@ -19,7 +19,8 @@
 #include <utility>
 
 namespace {
-constexpr auto kManifestUrl = "https://cdn.playplomo.com/manifest.json";
+constexpr auto kReleaseManifestUrl = "https://cdn.playplomo.com/manifest.json";
+constexpr auto kAlphaManifestUrl = "https://cdn.playplomo.com/manifest-alpha.json";
 // Simultaneous file downloads. Thousands of small files make per-request latency the bottleneck, not bandwidth.
 constexpr int kParallelDownloads = 16;  // 18 made Cloudflare answer "excessive load" over HTTP/2
 constexpr int kMaxAttempts = 4;
@@ -135,6 +136,14 @@ QString PlomoPackUpdater::installedVersion() const
     return QJsonDocument::fromJson(manifest.readAll()).object().value("version").toString();
 }
 
+QString PlomoPackUpdater::installedChannel() const
+{
+    QFile manifest(QDir(m_instanceRoot).filePath(".plomo/installed-manifest.json"));
+    if (!manifest.open(QIODevice::ReadOnly))
+        return {};
+    return QJsonDocument::fromJson(manifest.readAll()).object().value("channel").toString();
+}
+
 void PlomoPackUpdater::verify()
 {
     if (m_state == State::Installing || m_state == State::Checking || m_state == State::Verifying || !isInstalled())
@@ -197,11 +206,13 @@ void PlomoPackUpdater::check()
         return;
     m_canPlayOffline = false;
     setState(State::Checking);
-    QNetworkRequest request(QUrl(QString::fromLatin1(kManifestUrl)));
+    QNetworkRequest request(QUrl(QString::fromLatin1(m_alpha ? kAlphaManifestUrl : kReleaseManifestUrl)));
     request.setTransferTimeout(10000);
     // The manifest is ~1.6 MB; with the last copy and its ETag the server only has to answer "304 not modified".
-    const QString cacheBody = QDir(m_instanceRoot).filePath(".plomo/manifest-cache.json");
-    const QString cacheTag = QDir(m_instanceRoot).filePath(".plomo/manifest-cache.etag");
+    // One cache per channel: the ETag of one manifest must never be sent for the other one.
+    const QString suffix = m_alpha ? QStringLiteral("-alpha") : QString();
+    const QString cacheBody = QDir(m_instanceRoot).filePath(".plomo/manifest-cache" + suffix + ".json");
+    const QString cacheTag = QDir(m_instanceRoot).filePath(".plomo/manifest-cache" + suffix + ".etag");
     QByteArray cachedBody, cachedTag;
     if (isInstalled()) {
         QFile body(cacheBody), tag(cacheTag);

@@ -876,6 +876,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             resetIfInvalid(m_settings->registerSetting({ "ResourceURLOverride", "ResourceURL" }, "").get());
         }
 
+        // Test channel of the PLOMO modpack (manifest-alpha.json instead of manifest.json)
+        m_settings->registerSetting("PlomoAlphaChannel", false);
+
         m_settings->registerSetting("MetaRefreshOnLaunch", true);
         m_settings->registerSetting("CloseAfterLaunch", false);
         m_settings->registerSetting("QuitAfterGameStop", false);
