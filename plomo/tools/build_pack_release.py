@@ -21,11 +21,12 @@ PACK_COMPONENTS = {"formatVersion": 1, "components": [
 ]}
 # Files the game or its mods rewrite on every start (video/shader settings, machine fingerprints). Publishing them
 # would make the launcher offer an update after each session and overwrite the player's own settings.
+# config/fml.toml is NOT excluded on purpose: it holds earlyWindowProvider = "PlomoEarlyLoading", without which Forge falls back to
+# its own loading screen and the plomo-early-loading mod is never used.
 EXCLUDED_FILES = {
     "config/embeddium-options.json",
     "config/embeddium-fingerprint.json",
     "config/oculus.properties",
-    "config/fml.toml",
     "config/asyncparticles/asyncparticles-mixin.properties",
     "config/fabric/indigo-renderer.properties",
 }
@@ -33,6 +34,8 @@ EXCLUDED_FILES = {
 # releases at the real one, whatever address the source instance has.
 CLIENT_CONFIG = "config/plomo-client.toml"
 RELEASE_SERVER = "plomo.raidzone.online"
+FML_CONFIG = "config/fml.toml"
+_EARLY_PROVIDER = re.compile(r'^\s*earlyWindowProvider\s*=\s*"PlomoEarlyLoading"', re.MULTILINE)
 _SERVER_LINE = re.compile(r'^(\s*serverAddress\s*=\s*)"[^"]*"', re.MULTILINE)
 
 
@@ -125,6 +128,10 @@ def main() -> int:
                         help="serverAddress written into config/plomo-client.toml on the alpha channel")
     parser.add_argument("--release-server", default=RELEASE_SERVER,
                         help="serverAddress written into config/plomo-client.toml on the release channel")
+    parser.add_argument("--only-dir", action="append", default=[],
+                        help="publish only these top-level folders of the pack (repeatable), e.g. config mods resourcepacks")
+    parser.add_argument("--exclude-dir", action="append", default=[],
+                        help="top-level folder of the pack to leave out (repeatable), e.g. tacz")
     parser.add_argument("--materialize", action="store_true",
                         help="Extract managed files under output_dir/files for HTTP hosting")
     args = parser.parse_args()
@@ -158,11 +165,20 @@ def main() -> int:
         components = {item["uid"]: item["version"] for item in pack["components"]}
         if components.get("net.minecraft") != "1.20.1" or components.get("net.minecraftforge") != "47.4.16":
             raise ValueError("Expected Minecraft 1.20.1 and Forge 47.4.16")
+        # Without earlyWindowProvider = "PlomoEarlyLoading" in fml.toml Forge uses its own loading screen and the
+        # plomo-early-loading mod does nothing: refuse a pack whose fml.toml does not enable it, warn if it is missing.
+        fml = next((m for m in archive.infolist() if not m.is_dir() and managed_path(m.filename, root) == FML_CONFIG), None)
+        if fml is None:
+            print(f"WARNING: {FML_CONFIG} is not in the pack; players will not see the PLOMO loading screen.")
+        elif not _EARLY_PROVIDER.search(archive.read(fml).decode("utf-8", errors="replace")):
+            raise ValueError(f'{FML_CONFIG} does not set earlyWindowProvider = "PlomoEarlyLoading"')
         for member in archive.infolist():
             if member.is_dir():
                 continue
             rel = managed_path(member.filename, root)
-            if rel is None:
+            if rel is None or rel.split("/", 1)[0] in args.exclude_dir:
+                continue
+            if args.only_dir and rel.split("/", 1)[0] not in args.only_dir:
                 continue
             if rel.casefold() in seen:
                 raise ValueError(f"Duplicate destination path: {rel}")

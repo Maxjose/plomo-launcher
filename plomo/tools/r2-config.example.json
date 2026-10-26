@@ -1,0 +1,6 @@
+{
+  "endpoint": "https://<ACCOUNT_ID>.r2.cloudflarestorage.com",
+  "bucket": "<BUCKET_NAME>",
+  "access_key_id": "<PEGA_AQUI_EL_ACCESS_KEY_ID>",
+  "secret_access_key": "<PEGA_AQUI_LA_SECRET_ACCESS_KEY>"
+}

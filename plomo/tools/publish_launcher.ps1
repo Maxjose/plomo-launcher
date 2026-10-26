@@ -1,13 +1,12 @@
 # Publishes launcher.json (the notice that tells players a new launcher exists, and what the launcher needs to update itself).
 # It reads the GitHub release (version, installer address, SHA256SUMS.txt), re-downloads the installer to double-check its
-# SHA-256 and writes launcher\launcher.json into the bucket mounted as a drive (rclone, K:). Nobody is told about a launcher
+# SHA-256 and writes launcher/launcher.json into the R2 bucket over its S3 API (r2-config.json). Nobody is told about a launcher
 # until this runs: publishing the GitHub release alone does not reach the players.
 # Usage: .\tools\publish_launcher.ps1                 (latest GitHub release)
 #        .\tools\publish_launcher.ps1 -Tag v1.0.3     (a specific one)
 #        .\tools\publish_launcher.ps1 -DryRun         (shows what it would publish, writes nothing)
 param(
     [string]$Tag = '',
-    [ValidatePattern('^[A-Za-z]:$')][string]$Drive = 'K:',
     [switch]$DryRun,
     [switch]$AllowDowngrade
 )
@@ -60,14 +59,15 @@ if ($current -and ([version]$current.version -gt [version]$version) -and -not $A
 }
 if ($DryRun) { "Prueba: no se escribio nada."; return }
 
-if (-not (Test-Path "$Drive\")) { throw "La unidad $Drive no esta montada (rclone)." }
-New-Item -ItemType Directory -Force "$Drive\launcher" | Out-Null
-[IO.File]::WriteAllText("$Drive\launcher\launcher.json", $json, (New-Object Text.UTF8Encoding($false)))
+. "$PSScriptRoot\r2_common.ps1"
+$tmpJson = Join-Path ([IO.Path]::GetTempPath()) 'plomo-launcher.json'
+[IO.File]::WriteAllText($tmpJson, $json, (New-Object Text.UTF8Encoding($false)))
+try { Invoke-R2 put $tmpJson 'launcher/launcher.json' --content-type application/json } finally { Remove-Item $tmpJson -ErrorAction SilentlyContinue }
 
-# Verification through the public URL; rclone uploads in the background, so retry for a while.
+# Verification through the public URL; the CDN can take a moment to show it, so retry for a while.
 $deadline = (Get-Date).AddMinutes(20)
 $ok = $false
-Write-Host "Esperando a que rclone termine de subir y el CDN muestre launcher.json $version (hasta 20 min)..."
+Write-Host "Esperando a que el CDN muestre launcher.json $version (hasta 20 min)..."
 while ((Get-Date) -lt $deadline) {
     try {
         $live = Invoke-RestMethod "$cdn/launcher/launcher.json?nocache=$([guid]::NewGuid())"
@@ -78,5 +78,5 @@ while ((Get-Date) -lt $deadline) {
     }
     Start-Sleep -Seconds 15
 }
-if (-not $ok) { throw "Pasaron 20 min y el CDN no muestra launcher.json en la version $version. Puede que rclone siga subiendo: vuelve a comprobar $cdn/launcher/launcher.json mas tarde." }
+if (-not $ok) { throw "Pasaron 20 min y el CDN no muestra launcher.json en la version $version. El archivo ya esta en R2; vuelve a comprobar $cdn/launcher/launcher.json mas tarde." }
 "OK: launcher $version anunciado en $cdn/launcher/launcher.json"

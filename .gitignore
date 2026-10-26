@@ -70,3 +70,7 @@ __pycache__/
 /plomo/installer/work/
 accounts.json
 PLOMO.cfg
+
+# Credenciales de R2: nunca al repositorio
+r2-config.json
+plomo/tools/r2-config.json
